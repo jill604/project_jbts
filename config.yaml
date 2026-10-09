@@ -1,0 +1,75 @@
+# ============================================================================
+# TinyCD 标准训练配置 (对应当前 train.py: 指标计算已去掉多余的 sigmoid)
+#
+# 有效参考结果 (run_0002 的权重 + eval_ckpt.py 按正确指标重算, 2026-09-26):
+#   val  (4613 张):  best epoch 75, F1 0.6073, IoU 0.4361 (epoch 80 基本持平)
+#   test (19355 张): epoch 75, P 0.6558, R 0.5985, F1 0.6258, IoU 0.4554
+#   注: 训练时 tensorboard 里的 F1/IoU 因多套一层 sigmoid 全部无效; loss 曲线有效
+# ============================================================================
+
+# ----- 随机性控制 (train.py: set_seed) -----
+seed: 42
+cudnn_deterministic: true   # cudnn.deterministic=True, benchmark=False
+gpu_id: 0
+
+# ----- 数据 (dataset/dataset1.py + 实际数据集规模) -----
+data:
+  path: /home/mvai/Documents/zyn/TinyCD_data
+  dataset_class: dataset.dataset1.MyDataset
+  # 目录结构: A/ (参考图), B/ (测试图), label/ (GT mask), list/ (train|val|test.txt)
+  num_samples: {train: 47743, val: 4613, test: 19355}
+  normalize:                      # ImageNet 统计量
+    mean: [0.485, 0.456, 0.406]
+    std: [0.229, 0.224, 0.225]
+
+  # 仅训练集启用增强; shared 部分对 A/B/label 同步施加, aberration 部分对 A、B 独立施加
+  augmentation:
+    shared:
+      HorizontalFlip: {p: 0.5}
+      VerticalFlip: {p: 0.5}
+      Rotate: {limit: 5, p: 0.5}
+    aberration:
+      RandomBrightnessContrast: {brightness_limit: 0.2, contrast_limit: 0.2, p: 0.5}
+      GaussianBlur: {blur_limit: [3, 5], p: 0.5}
+
+# ----- 模型 (models/change_classifier.py 默认参数) -----
+model:
+  name: ChangeClassifier
+  bkbn_name: efficientnet_b4
+  pretrained: true               # 使用 ImageNet 预训练 backbone
+  output_layer_bkbn: "3"
+  freeze_backbone: false
+
+# ----- 损失 -----
+loss: BCELoss
+
+
+# ----- 优化器 (LEVIR-CD 上 Optuna 调出的参数) -----
+optimizer:
+  name: AdamW
+  lr: 0.00356799066427741
+  weight_decay: 0.009449677083344786
+  amsgrad: false
+
+# ----- 学习率调度 -----
+scheduler:
+  name: CosineAnnealingLR
+  T_max: 100                     # 与 epochs 保持一致
+
+# ----- 训练循环 -----
+train:
+  epochs: 100
+  batch_size: 8
+  shuffle: true
+  drop_last: true
+  save_after: 1                  # 每 1 个 epoch 保存一次 model_<epc>.pth
+  num_workers: 0
+
+val:
+  batch_size: 8
+  shuffle: false
+  drop_last: false
+
+# ----- 路径 -----
+paths:
+  log_path: runs                 # 自动递增为 runs/run_XXXX/
